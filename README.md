@@ -27,21 +27,17 @@ Sistema web para criação e execução de testes de associação implícita (IA
 ## ⚙️ Como rodar o projeto
 
 ### 1. Clonar o repositório
-``bash
-git clone https://github.com/vitorfariaa/SinapSense_IAT.git
-cd SinapSense_IAT
+```git clone https://github.com/vitorfariaa/SinapSense_IAT.git```
+```cd SinapSense_IAT```
 
 ### 2. Instalar dependências
-``bash
-npm install
+```npm install```
 
 ### 3. Rodar o projeto
-``bash
-node server.js
+``` node server.js ```
 
 ### 4. Acessar o navegador
-``bash
-http://localhost:3000
+```http://localhost:3000```
 
 ## 🧮 Endpoints principais da API
 
