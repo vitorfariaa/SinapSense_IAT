@@ -70,6 +70,7 @@
 
   <!-- lógica da página (com fallback de jget/jpost) -->
   <script>
+
     window.addEventListener('load', () => {
       const _jget = window.jget || (async url => {
         const r = await fetch(url);
@@ -149,6 +150,7 @@
       })();
 
       document.getElementById('goDemog').onclick = async () => {
+      
         const id = Number(document.getElementById('testSel').value);
         if (!id) { alert('Selecione um teste.'); return; }
         try {
@@ -156,8 +158,18 @@
           currentTest = full.test;
           brands = full.brands;
           stimuli = full.stimuli;
-          // preload das imagens
-          for (const b of brands) { const img = new Image(); img.src = b.image_path; }
+          // preload das imagens (AGORA aguardando de verdade)
+          const btn = document.getElementById('startTutorial');
+          btn.disabled = true;
+          btn.textContent = 'Carregando imagens...';
+          try {
+            await preloadBrandImages(brands);
+          } catch (e) {
+            console.warn(e);
+          }
+          btn.disabled = false;
+          btn.textContent = 'Iniciar tutorial';
+
           hide(stepSel); show(stepDemog);
         } catch (err) {
           alert('Falha ao carregar o teste: ' + err.message);
@@ -181,6 +193,33 @@
           alert('Falha ao iniciar execução: ' + err.message);
         }
       };
+
+      const brandImgCache = new Map();
+      const wait = ms => new Promise(r => setTimeout(r, ms));
+
+      function preloadImage(src) {
+        return new Promise((resolve, reject) => {
+          const img = new Image();
+          img.onload = async () => {
+            if (img.decode) {
+              try { await img.decode(); } catch {}
+            }
+            resolve(img);
+          };
+          img.onerror = () => reject(new Error('Falha ao carregar imagem: ' + src));
+          img.src = src;
+        });
+      }
+
+      async function preloadBrandImages(brands) {
+        await Promise.all(brands.map(async b => {
+          const img = await preloadImage(b.image_path);
+          img.className = 'brand';           // garante a classe
+          img.alt = b.name;
+          brandImgCache.set(b.id, img);
+        }));
+      }
+
 
       function onTutorialKey(e) {
         if (e.code === 'Space' && !tutorialStarted) {
@@ -241,24 +280,45 @@
         currentTrial = -1;
       }
 
-      function nextTrial() {
+      async function nextTrial() {
         currentTrial++;
         if (currentTrial >= trialsPlan.length) {
           finishTest();
           return;
         }
         const tr = trialsPlan[currentTrial];
-        testArea.innerHTML = '<img class="brand" src="' + tr.brandImage + '" alt="' + tr.brandName + '" />';
         awaitingKey = false;
-        setTimeout(() => {
-          testArea.textContent = '';
-          setTimeout(() => {
-            testArea.textContent = tr.stimulusText;
-            phraseShownAt = performance.now();
-            awaitingKey = true;
-          }, isiMs);
-        }, primeDurationMs);
+
+        // garante que a imagem da marca está pronta
+        let primeImg = brandImgCache.get(tr.brandId);
+        if (!primeImg) {
+          try {
+            primeImg = await preloadImage(tr.brandImage);
+            primeImg.className = 'brand';
+            primeImg.alt = tr.brandName;
+            brandImgCache.set(tr.brandId, primeImg);
+          } catch (e) {
+            console.warn(e);
+          }
+        }
+
+        // mostra o prime (clonando o nó para não mexer no cache)
+        if (primeImg) {
+          testArea.replaceChildren(primeImg.cloneNode());
+        } else {
+          testArea.textContent = ''; // fallback se algo falhar
+        }
+
+        await wait(primeDurationMs);  // aguarda o tempo do prime
+        testArea.textContent = '';    // ISI
+        await wait(isiMs);
+
+        // mostra o estímulo textual
+        testArea.textContent = tr.stimulusText;
+        phraseShownAt = performance.now();
+        awaitingKey = true;
       }
+
 
       function onTestKey(e) {
         if (!awaitingKey) return;
