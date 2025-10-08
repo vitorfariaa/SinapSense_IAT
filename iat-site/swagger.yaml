@@ -1,0 +1,312 @@
+openapi: 3.0.3
+info:
+  title: IAT - Testes de Associação Implícita API
+  version: 1.0.0
+  description: >
+    API usada pelo sistema de Testes de Associação Implícita (IAT).  
+    Permite cadastrar testes, rodar execuções e consultar resultados.
+servers:
+  - url: http://localhost:3000
+paths:
+  /api/tests:
+    get:
+      summary: Lista todos os testes cadastrados
+      responses:
+        '200':
+          description: Lista de testes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Test'
+    post:
+      summary: Cria um novo teste (2 marcas + estímulos)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  example: "Coca vs Pepsi"
+                brandAName:
+                  type: string
+                  example: "Coca Cola"
+                brandBName:
+                  type: string
+                  example: "Pepsi"
+                brandAImage:
+                  type: string
+                  format: binary
+                brandBImage:
+                  type: string
+                  format: binary
+                stimuliJson:
+                  type: string
+                  example: '[{"text":"é gostoso","valence":"positive"}]'
+      responses:
+        '200':
+          description: Teste criado com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  testId:
+                    type: integer
+
+  /api/tests/{id}:
+    get:
+      summary: Retorna informações completas de um teste
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Detalhes do teste
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  test:
+                    $ref: '#/components/schemas/Test'
+                  brands:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Brand'
+                  stimuli:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Stimulus'
+
+  /api/tests/{id}/runs:
+    get:
+      summary: Lista execuções (participantes) de um teste
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Execuções encontradas
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  testId:
+                    type: integer
+                  runs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Run'
+
+  /api/tests/{id}/summary:
+    get:
+      summary: Retorna resumo agregado de todas as execuções de um teste
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Estatísticas agregadas
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  testId:
+                    type: integer
+                  summary:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TestSummary'
+
+  /api/tests/{id}/csv:
+    get:
+      summary: Exporta todos os dados do teste em CSV
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Arquivo CSV contendo todos os trials
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+
+  /api/runs:
+    post:
+      summary: Cria uma nova execução (run) para um participante
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                testId:
+                  type: integer
+                cpf:
+                  type: string
+                gender:
+                  type: string
+                age:
+                  type: integer
+      responses:
+        '200':
+          description: Execução criada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  runId:
+                    type: integer
+
+  /api/runs/{id}/trials:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+        description: ID da execução (run)
+    get:
+      summary: Lista todas as tentativas (trials) de uma execução
+      responses:
+        '200':
+          description: Lista de trials
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  runId:
+                    type: integer
+                  trials:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Trial'
+    post:
+      summary: Envia resultados (trials) de uma execução
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                trials:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/TrialInput'
+      responses:
+        '200':
+          description: Trials salvos com sucesso
+
+  /api/runs/{id}/summary:
+    get:
+      summary: Retorna resumo de uma execução específica
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Estatísticas da execução
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  runId:
+                    type: integer
+                  summary:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TestSummary'
+
+components:
+  schemas:
+    Test:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        created_at: { type: string }
+    Brand:
+      type: object
+      properties:
+        id: { type: integer }
+        test_id: { type: integer }
+        name: { type: string }
+        image_path: { type: string }
+    Stimulus:
+      type: object
+      properties:
+        id: { type: integer }
+        test_id: { type: integer }
+        text: { type: string }
+        valence: { type: string, enum: [positive, negative] }
+    Run:
+      type: object
+      properties:
+        id: { type: integer }
+        started_at: { type: string }
+        gender: { type: string }
+        age: { type: integer }
+    Trial:
+      type: object
+      properties:
+        trial_id: { type: integer }
+        brand: { type: string }
+        stimulus_text: { type: string }
+        stimulus_valence: { type: string }
+        key: { type: string }
+        is_positive_response: { type: boolean }
+        response_time_ms: { type: integer }
+        shown_at: { type: string }
+        prime_duration_ms: { type: integer }
+    TrialInput:
+      type: object
+      properties:
+        brandId: { type: integer }
+        stimulusId: { type: integer }
+        key: { type: string }
+        isPositiveResponse: { type: boolean }
+        responseTimeMs: { type: integer }
+        shownAt: { type: string }
+        primeDurationMs: { type: integer }
+    TestSummary:
+      type: object
+      properties:
+        brand: { type: string }
+        stimulus_valence: { type: string }
+        positive_responses: { type: integer }
+        negative_responses: { type: integer }
+        total: { type: integer }
+        avg_rt_correct: { type: number }
+        avg_rt_all: { type: number }
+        error_rate: { type: number }

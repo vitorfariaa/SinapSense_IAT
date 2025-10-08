@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang='pt-BR'>
+<head>
+  <meta charset='utf-8' />
+  <meta name='viewport' content='width=device-width, initial-scale=1' />
+  <title>Rodar Teste • IAT</title>
+  <link rel='stylesheet' href='style.css' />
+</head>
+<body>
+  <img src='logo.png' alt='Logo SinapSense' class='logo'>
+  <div class='container'>
+    <h1>Rodar Teste</h1>
+    <a class='btn' href='index.html'>← Voltar</a>
+
+    <div id='step-select' class='card' style='margin-top:1rem;'>
+      <h3>Selecione o teste</h3>
+      <select id='testSel' class='input'></select>
+      <button id='goDemog' class='btn primary' style='margin-top:.5rem;'>Continuar</button>
+    </div>
+
+    <div id='step-demog' class='card' style='margin-top:1rem; display:none;'>
+      <h3>Dados do participante</h3>
+      <p class='small'>Seu CPF será convertido em hash SHA-256 no servidor. Não armazenamos o número em texto puro.</p>
+      <div class='grid'>
+        <div>
+          <label>CPF</label>
+          <input class='input' id='cpf' placeholder='apenas números' />
+        </div>
+        <div>
+          <label>Gênero</label>
+          <select id='gender' class='input'>
+            <option value='F'>F</option>
+            <option value='M'>M</option>
+            <option value='Outro'>Outro</option>
+            <option value='Prefiro não dizer'>Prefiro não dizer</option>
+          </select>
+        </div>
+        <div>
+          <label>Idade</label>
+          <input class='input' id='age' type='number' min='10' max='120' />
+        </div>
+      </div>
+      <button id='startTutorial' class='btn primary' style='margin-top:.5rem;'>Iniciar tutorial</button>
+    </div>
+
+    <div id='step-tutorial' class='card' style='margin-top:1rem; display:none;'>
+      <h3>Tutorial</h3>
+      <p>Quando aparecer uma PALAVRA:</p>
+      <p class='big'><kbd>E</kbd> = positivo • <kbd>O</kbd> = negativo</p>
+      <p class='small'>Exemplos: 'Feliz' (E), 'Bom' (E), 'Triste' (O), 'Ruim' (O). Faça alguns acertos para prosseguir.</p>
+      <div id='tutArea' class='fullcenter big'>Pressione "Espaço" para começar</div>
+      <div class='small' style='text-align:center; margin-top:.5rem;'>Aperte <kbd>E</kbd> para positivo, <kbd>O</kbd> para negativo.</div>
+    </div>
+
+    <div id='step-test' class='card' style='margin-top:1rem; display:none;'>
+      <h3>Teste</h3>
+      <p class='big' style='text-align:center;'><kbd>E</kbd> = positivo • <kbd>O</kbd> = negativo</p>
+      <div id='testArea' class='fullcenter big'></div>
+    </div>
+
+    <div id='step-finish' class='card' style='margin-top:1rem; display:none;'>
+      <h3>Concluído</h3>
+      <div id='finishMsg'></div>
+      <div id='finishSummary' style='margin-top:1rem;'></div>
+    </div>
+  </div>
+
+  <!-- helpers -->
+  <script src='util.js?v=2'></script>
+
+  <!-- lógica da página (com fallback de jget/jpost) -->
+  <script>
+    window.addEventListener('load', () => {
+      const _jget = window.jget || (async url => {
+        const r = await fetch(url);
+        if (!r.ok) throw new Error('GET ' + url + ' falhou');
+        return r.json();
+      });
+      const _jpost = window.jpost || (async (url, data) => {
+        const r = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        if (!r.ok) throw new Error('POST ' + url + ' falhou');
+        return r.json();
+      });
+
+      const qs = new URLSearchParams(location.search);
+      const presetId = Number(qs.get('testId') || '0');
+
+      const stepSel = document.getElementById('step-select');
+      const stepDemog = document.getElementById('step-demog');
+      const stepTut = document.getElementById('step-tutorial');
+      const stepTest = document.getElementById('step-test');
+      const stepFinish = document.getElementById('step-finish');
+
+      function show(el) { el.style.display = ''; }
+      function hide(el) { el.style.display = 'none'; }
+
+      let currentTest = null;
+      let brands = [];
+      let stimuli = [];
+      let runId = null;
+
+      const primeDurationMs = 300;
+      const isiMs = 100;
+
+      const tutorialItems = [
+        { text: 'Feliz', valence: 'positive' },
+        { text: 'Bom', valence: 'positive' },
+        { text: 'Triste', valence: 'negative' },
+        { text: 'Ruim', valence: 'negative' }
+      ];
+      let tutorialStarted = false;
+      let tutorialIndex = -1;
+      let tutArea = null;
+
+      let trialsPlan = [];
+      let currentTrial = -1;
+      let phraseShownAt = 0;
+      let awaitingKey = false;
+      let testArea = null;
+      const collectedTrials = [];
+
+      // popula o combo de testes
+      (async () => {
+        try {
+          const tests = await _jget('/api/tests');
+          const sel = document.getElementById('testSel');
+          sel.innerHTML = '';
+          if (!tests.length) {
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.textContent = 'Nenhum teste cadastrado';
+            sel.appendChild(opt);
+          } else {
+            for (const t of tests) {
+              const opt = document.createElement('option');
+              opt.value = String(t.id);
+              opt.textContent = '#' + t.id + ' • ' + t.name;
+              sel.appendChild(opt);
+            }
+            if (presetId) sel.value = String(presetId);
+          }
+        } catch (err) {
+          alert('Falha ao carregar testes: ' + err.message);
+        }
+      })();
+
+      document.getElementById('goDemog').onclick = async () => {
+        const id = Number(document.getElementById('testSel').value);
+        if (!id) { alert('Selecione um teste.'); return; }
+        try {
+          const full = await _jget('/api/tests/' + id);
+          currentTest = full.test;
+          brands = full.brands;
+          stimuli = full.stimuli;
+          // preload das imagens
+          for (const b of brands) { const img = new Image(); img.src = b.image_path; }
+          hide(stepSel); show(stepDemog);
+        } catch (err) {
+          alert('Falha ao carregar o teste: ' + err.message);
+        }
+      };
+
+      document.getElementById('startTutorial').onclick = async () => {
+        const cpf = document.getElementById('cpf').value.trim();
+        const gender = document.getElementById('gender').value;
+        const age = Number(document.getElementById('age').value);
+        if (!cpf || !age) { alert('Informe CPF e idade.'); return; }
+        try {
+          const run = await _jpost('/api/runs', { testId: currentTest.id, cpf, gender, age });
+          runId = run.runId;
+          hide(stepDemog); show(stepTut);
+          tutArea = document.getElementById('tutArea');
+          tutorialStarted = false;
+          tutorialIndex = -1;
+          document.addEventListener('keydown', onTutorialKey);
+        } catch (err) {
+          alert('Falha ao iniciar execução: ' + err.message);
+        }
+      };
+
+      function onTutorialKey(e) {
+        if (e.code === 'Space' && !tutorialStarted) {
+          tutorialStarted = true;
+          tutorialIndex = -1;
+          nextTutorialWord();
+          return;
+        }
+        if (!tutorialStarted) return;
+        if (e.code !== 'KeyE' && e.code !== 'KeyO') return;
+        const item = tutorialItems[tutorialIndex];
+        const isPos = e.code === 'KeyE';
+        const ok = (item.valence === 'positive' && isPos) || (item.valence === 'negative' && !isPos);
+        tutArea.innerHTML = ok ? '<div class="big">✔️</div>' : '<div class="big">✖️</div>';
+        setTimeout(() => {
+          if (tutorialIndex >= tutorialItems.length - 1) {
+            document.removeEventListener('keydown', onTutorialKey);
+            startRealTest();
+          } else {
+            nextTutorialWord();
+          }
+        }, 400);
+      }
+
+      function nextTutorialWord() {
+        tutorialIndex++;
+        tutArea.textContent = tutorialItems[tutorialIndex].text;
+      }
+
+      function startRealTest() {
+        hide(stepTut); show(stepTest);
+        testArea = document.getElementById('testArea');
+        buildTrialsPlan();
+        document.addEventListener('keydown', onTestKey);
+        nextTrial();
+      }
+
+      function buildTrialsPlan() {
+        const combos = [];
+        for (const st of stimuli) for (const b of brands) combos.push({ brand: b, stimulus: st });
+        // shuffle (definido em util.js; se não existir, usa fallback local)
+        const _shuffle = window.shuffle || (arr => {
+          for (let i = arr.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [arr[i], arr[j]] = [arr[j], arr[i]];
+          }
+          return arr;
+        });
+        _shuffle(combos);
+        trialsPlan = combos.map(c => ({
+          brandId: c.brand.id,
+          brandName: c.brand.name,
+          brandImage: c.brand.image_path,
+          stimulusId: c.stimulus.id,
+          stimulusText: c.stimulus.text,
+          stimulusValence: c.stimulus.valence
+        }));
+        currentTrial = -1;
+      }
+
+      function nextTrial() {
+        currentTrial++;
+        if (currentTrial >= trialsPlan.length) {
+          finishTest();
+          return;
+        }
+        const tr = trialsPlan[currentTrial];
+        testArea.innerHTML = '<img class="brand" src="' + tr.brandImage + '" alt="' + tr.brandName + '" />';
+        awaitingKey = false;
+        setTimeout(() => {
+          testArea.textContent = '';
+          setTimeout(() => {
+            testArea.textContent = tr.stimulusText;
+            phraseShownAt = performance.now();
+            awaitingKey = true;
+          }, isiMs);
+        }, primeDurationMs);
+      }
+
+      function onTestKey(e) {
+        if (!awaitingKey) return;
+        if (e.code !== 'KeyE' && e.code !== 'KeyO') return;
+        const tr = trialsPlan[currentTrial];
+        const rt = Math.round(performance.now() - phraseShownAt);
+        const isPositiveResponse = e.code === 'KeyE';
+        collectedTrials.push({
+          brandId: tr.brandId,
+          stimulusId: tr.stimulusId,
+          key: isPositiveResponse ? 'E' : 'O',
+          isPositiveResponse,
+          responseTimeMs: rt,
+          shownAt: new Date().toISOString(),
+          primeDurationMs
+        });
+        awaitingKey = false;
+        nextTrial();
+      }
+
+      async function finishTest() {
+        document.removeEventListener('keydown', onTestKey);
+        hide(stepTest); show(stepFinish);
+        document.getElementById('finishMsg').textContent = 'Enviando resultados...';
+        try {
+          await _jpost('/api/runs/' + runId + '/trials', { trials: collectedTrials });
+          const summary = await _jget('/api/runs/' + runId + '/summary');
+          document.getElementById('finishMsg').innerHTML = 'Execução salva com sucesso! <strong>Run #' + runId + '</strong>';
+          renderSummary(summary.summary);
+        } catch (e) {
+          document.getElementById('finishMsg').textContent = 'Falha ao salvar: ' + e.message;
+        }
+      }
+
+      function renderSummary(rows) {
+        const box = document.getElementById('finishSummary');
+        if (!rows || !rows.length) {
+          box.textContent = 'Sem dados.';
+          return;
+        }
+        const table = document.createElement('table');
+        table.className = 'input';
+        table.style.width = '100%';
+        table.innerHTML = `
+          <thead>
+            <tr>
+              <th style='text-align:left;'>Marca</th>
+              <th>Valência do estímulo</th>
+              <th>Respostas positivas</th>
+              <th>Total</th>
+              <th>RT médio (positivas)</th>
+              <th>RT médio (todas)</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        `;
+        const tb = table.querySelector('tbody');
+        for (const r of rows) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${r.brand}</td>
+            <td style='text-align:center;'>${r.stimulus_valence}</td>
+            <td style='text-align:center;'>${r.positive_responses ?? 0}</td>
+            <td style='text-align:center;'>${r.total ?? 0}</td>
+            <td style='text-align:center;'>${r.avg_rt_positive ? Math.round(r.avg_rt_positive) + ' ms' : '-'}</td>
+            <td style='text-align:center;'>${r.avg_rt_all ? Math.round(r.avg_rt_all) + ' ms' : '-'}</td>
+          `;
+          tb.appendChild(tr);
+        }
+        box.innerHTML = '<h4>Resumo desta execução</h4>';
+        box.appendChild(table);
+      }
+    });
+  </script>
+</body>
+</html>

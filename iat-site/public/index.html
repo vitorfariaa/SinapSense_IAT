@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang='pt-BR'>
+<head>
+  <meta charset='utf-8' />
+  <meta name='viewport' content='width=device-width, initial-scale=1' />
+  <title>IAT • Home</title>
+  <link rel='stylesheet' href='style.css' />
+</head>
+<body>
+  <img src='logo.png' alt='Logo SinapSense' class='logo'>
+  <div class='container'>
+    <h1>IAT • Testes de Associação Implícita</h1>
+    <div class='row'>
+      <a class='btn' href='create.html'>Cadastrar novo teste</a>
+      <a class='btn primary' href='run.html'>Rodar um teste</a>
+    </div>
+
+    <hr />
+
+    <h2>Testes cadastrados</h2>
+    <div id='tests'></div>
+  </div>
+  <script src='util.js'></script>
+  <script>
+  window.addEventListener('load', async () => {
+    // fallback caso util.js ainda não esteja disponível por cache/ordem
+    const _jget = window.jget || (async url => {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error('GET ' + url + ' falhou');
+      return r.json();
+    });
+
+    try {
+      const tests = await _jget('/api/tests');
+      const wrap = document.getElementById('tests');
+      if (!tests.length) {
+        wrap.innerHTML = '<p>Nenhum teste cadastrado ainda.</p>';
+        return;
+      }
+      const frag = document.createDocumentFragment();
+      for (const t of tests) {
+        const div = document.createElement('div');
+        div.className = 'card';
+        div.innerHTML = `
+          <div><strong>${t.name}</strong> <span class='badge'>#${t.id}</span></div>
+          <div class='small'>Criado em: ${new Date(t.created_at).toLocaleString()}</div>
+          <div style='margin-top:.5rem; display:flex; gap:.5rem;'>
+            <a class='btn' href='run.html?testId=${t.id}'>Rodar</a>
+          </div>
+        `;
+        frag.appendChild(div);
+      }
+      wrap.appendChild(frag);
+    } catch (e) {
+      document.getElementById('tests').innerHTML = `<p>Erro ao carregar: ${e.message}</p>`;
+    }
+  });
+</script>
+</body>
+</html>

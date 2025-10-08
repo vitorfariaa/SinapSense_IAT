@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang='pt-BR'>
+<head>
+  <meta charset='utf-8' />
+  <meta name='viewport' content='width=device-width, initial-scale=1' />
+  <title>Cadastrar Teste • IAT</title>
+  <link rel='stylesheet' href='style.css' />
+</head>
+<body>
+  <img src='logo.png' alt='Logo SinapSense' class='logo'>
+  <div class='container'>
+    <h1>Cadastrar Teste</h1>
+    <a class='btn' href='index.html'>← Voltar</a>
+
+    <form id='form' class='card' style='margin-top:1rem;' enctype='multipart/form-data'>
+      <label>Nome do teste</label>
+      <input class='input' name='name' required placeholder='Ex.: Coca vs Pepsi' />
+
+      <div class='grid'>
+        <div>
+          <h3>Marca A</h3>
+          <label>Nome</label>
+          <input class='input' name='brandAName' required />
+          <label>Imagem (arquivo)</label>
+          <input type='file' name='brandAImage' accept='image/*' />
+        </div>
+        <div>
+          <h3>Marca B</h3>
+          <label>Nome</label>
+          <input class='input' name='brandBName' required />
+          <label>Imagem (arquivo)</label>
+          <input type='file' name='brandBImage' accept='image/*' />
+        </div>
+      </div>
+
+      <hr />
+      <h3>Frases genéricas</h3>
+      <p class='small'>Adicione frases e marque se a valência é positiva ou negativa. Ex.: 'é muito gostoso' (positiva), 'é ruim' (negativa).</p>
+
+      <div id='stimuliList'></div>
+      <div class='row'>
+        <input class='input' id='stText' placeholder='Digite a frase...' />
+        <select id='stValence'>
+          <option value='positive'>positiva</option>
+          <option value='negative'>negativa</option>
+        </select>
+        <button type='button' class='btn' id='addStim'>Adicionar</button>
+      </div>
+
+      <input type='hidden' name='stimuliJson' id='stimuliJson' />
+      <div style='margin-top:1rem'>
+        <button class='btn primary' type='submit'>Salvar teste</button>
+      </div>
+    </form>
+
+    <div id='out' style='margin-top:1rem;'></div>
+  </div>
+
+  <script>
+    const list = [];
+    const listDiv = document.getElementById('stimuliList');
+    function renderList() {
+      if (!list.length) {
+        listDiv.innerHTML = '<p class="small">Nenhuma frase adicionada.</p>';
+        return;
+      }
+      listDiv.innerHTML = '';
+      for (let i = 0; i < list.length; i++) {
+        const item = list[i];
+        const row = document.createElement('div');
+        row.className = 'row';
+        row.style.alignItems = 'center';
+        row.innerHTML = `
+          <div class='card' style='flex:1'>
+            <div><strong>${item.text}</strong></div>
+            <div class='small'>Valência: ${item.valence}</div>
+          </div>
+          <button class='btn' data-i='${i}'>Remover</button>
+        `;
+        row.querySelector('button').onclick = e => {
+          const idx = Number(e.target.dataset.i);
+          list.splice(idx, 1);
+          renderList();
+        };
+        listDiv.appendChild(row);
+      }
+    }
+
+    document.getElementById('addStim').onclick = () => {
+      const t = document.getElementById('stText').value.trim();
+      const v = document.getElementById('stValence').value;
+      if (!t) return;
+      list.push({ text: t, valence: v });
+      document.getElementById('stText').value = '';
+      renderList();
+    };
+
+    document.getElementById('form').addEventListener('submit', async e => {
+      e.preventDefault();
+      const out = document.getElementById('out');
+      if (!list.length) {
+        out.textContent = 'Adicione pelo menos uma frase.';
+        return;
+      }
+      document.getElementById('stimuliJson').value = JSON.stringify(list);
+      const fd = new FormData(e.target);
+      out.textContent = 'Salvando...';
+      try {
+        const r = await fetch('/api/tests', { method: 'POST', body: fd });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || 'erro');
+        out.innerHTML = `Teste salvo! ID: <strong>${j.testId}</strong> • <a class='btn' href='run.html?testId=${j.testId}'>Rodar agora</a>`;
+      } catch (err) {
+        out.textContent = 'Falha: ' + err.message;
+      }
+    });
+
+    renderList();
+  </script>
+</body>
+</html>
